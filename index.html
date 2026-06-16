@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cube Timer MVP</title>
+    <style>
+      :root { color-scheme: dark; --bg:#0b1020; --panel:rgba(19,27,52,.84); --text:#edf2ff; --muted:#96a2c7; --primary:#7c5cff; --primary-strong:#9d86ff; --accent:#25d0ab; --danger:#ff6b8a; --border:rgba(255,255,255,.1); --shadow:0 24px 80px rgba(0,0,0,.35); --radius-lg:28px; --radius-md:18px; --radius-sm:12px; --space-2:.75rem; --space-3:1rem; --space-4:1.5rem; }
+      * { box-sizing:border-box; }
+      body { min-height:100vh; margin:0; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:radial-gradient(circle at top left,rgba(124,92,255,.36),transparent 32rem),radial-gradient(circle at top right,rgba(37,208,171,.2),transparent 28rem),var(--bg); color:var(--text); }
+      button, select { font:inherit; }
+      button { cursor:pointer; }
+      select, button { border:1px solid var(--border); border-radius:var(--radius-sm); background:rgba(255,255,255,.07); color:var(--text); padding:.75rem .9rem; }
+      select:focus, button:focus-visible { outline:3px solid rgba(124,92,255,.45); outline-offset:2px; }
+      h1,h2,p { margin-top:0; }
+      h1 { margin-bottom:0; font-size:clamp(1.8rem,4vw,3rem); letter-spacing:-.05em; }
+      h2 { margin-bottom:0; font-size:1.05rem; }
+      canvas { display:block; width:100%; height:auto; }
+      .app-shell { width:min(1440px,calc(100% - 32px)); margin:0 auto; padding:32px 0; }
+      .app-header { display:flex; align-items:end; justify-content:space-between; gap:var(--space-4); margin-bottom:var(--space-4); }
+      .header-controls { display:flex; align-items:end; flex-wrap:wrap; gap:var(--space-2); }
+      .header-controls label { display:grid; gap:.35rem; color:var(--muted); font-size:.82rem; font-weight:700; }
+      .dashboard { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:var(--space-3); }
+      .panel { grid-column:span 4; min-height:220px; padding:var(--space-4); border:1px solid var(--border); border-radius:var(--radius-lg); background:linear-gradient(145deg,var(--panel),rgba(15,22,44,.74)); box-shadow:var(--shadow); backdrop-filter:blur(18px); }
+      .panel-wide { grid-column:span 6; }
+      .panel-large { grid-column:span 8; }
+      .eyebrow { margin-bottom:.35rem; color:var(--accent); font-size:.75rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+      .panel-heading { display:flex; justify-content:space-between; gap:var(--space-3); align-items:start; margin-bottom:var(--space-4); }
+      .status-pill { border-radius:999px; padding:.4rem .75rem; color:var(--accent); background:rgba(37,208,171,.12); font-size:.8rem; font-weight:800; }
+      .timer-panel { display:flex; flex-direction:column; }
+      .timer-button { flex:1; width:100%; border:0; border-radius:24px; background:linear-gradient(135deg,rgba(124,92,255,.2),rgba(37,208,171,.1)); }
+      .timer-button span { font-size:clamp(4rem,13vw,10rem); font-weight:850; letter-spacing:-.08em; }
+      .timer-button.running span { color:var(--accent); }
+      .hint { margin:var(--space-3) 0 0; color:var(--muted); }
+      .scramble-text { min-height:5rem; font-size:clamp(1.3rem,3vw,2.1rem); line-height:1.35; font-weight:800; }
+      .scramble-visual { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; width:112px; margin-top:var(--space-3); }
+      .scramble-visual span { aspect-ratio:1; border-radius:8px; background:var(--primary); }
+      .scramble-visual span:nth-child(3n) { background:var(--accent); }
+      .scramble-visual span:nth-child(2n) { background:var(--primary-strong); }
+      .stats-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:var(--space-2); margin:0; }
+      .stats-grid div { padding:var(--space-3); border-radius:var(--radius-md); background:rgba(255,255,255,.06); }
+      .stats-grid dt { color:var(--muted); font-size:.75rem; font-weight:800; text-transform:uppercase; }
+      .stats-grid dd { margin:.3rem 0 0; font-size:1.5rem; font-weight:850; }
+      .history-list { display:grid; gap:.65rem; max-height:330px; overflow:auto; padding:0; margin:0; list-style:none; }
+      .history-list li, .bar-row { display:grid; grid-template-columns:auto 1fr auto; gap:.75rem; align-items:center; padding:.8rem; border-radius:var(--radius-md); background:rgba(255,255,255,.055); }
+      .history-time { font-weight:850; }
+      .history-scramble { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .ghost-button,.danger-button { padding:.6rem .8rem; }
+      .danger-button { color:var(--danger); }
+      .distribution-bars { display:grid; gap:.65rem; }
+      .bar-track { height:10px; border-radius:999px; background:rgba(255,255,255,.09); overflow:hidden; }
+      .bar-fill { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--primary),var(--accent)); }
+      .empty-state { color:var(--muted); }
+      @media (max-width:1050px) { .panel,.panel-wide,.panel-large { grid-column:1 / -1; } .app-header { align-items:start; flex-direction:column; } }
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-header">
+        <div><p class="eyebrow">Local-first speedcubing timer</p><h1>Cube Timer</h1></div>
+        <div class="header-controls" aria-label="타이머 설정">
+          <label>종목<select id="eventSelect"></select></label>
+          <label>세션<select id="sessionSelect"></select></label>
+          <button id="newSessionButton" type="button">새 세션</button>
+        </div>
+      </header>
+      <main class="dashboard" aria-live="polite">
+        <section class="panel timer-panel panel-large" aria-labelledby="timerTitle">
+          <div class="panel-heading"><div><p class="eyebrow">Timer</p><h2 id="timerTitle">스페이스바 또는 화면 클릭</h2></div><span id="timerState" class="status-pill">대기</span></div>
+          <button id="timerButton" class="timer-button" type="button" aria-label="타이머 시작 또는 정지"><span id="timerDisplay">0.00</span></button>
+          <p class="hint">Space: 시작/정지 · Esc: 리셋 · 기록은 정지 시 자동 저장됩니다.</p>
+        </section>
+        <section class="panel" aria-labelledby="scrambleTitle">
+          <div class="panel-heading"><div><p class="eyebrow">Scramble</p><h2 id="scrambleTitle">현재 스크램블</h2></div><button id="scrambleButton" type="button" class="ghost-button">새로 생성</button></div>
+          <p id="scrambleText" class="scramble-text"></p>
+          <div class="scramble-visual" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        </section>
+        <section class="panel" aria-labelledby="statsTitle">
+          <div class="panel-heading"><div><p class="eyebrow">Stats</p><h2 id="statsTitle">통계</h2></div></div>
+          <dl class="stats-grid"><div><dt>PB</dt><dd id="pbSingle">-</dd></div><div><dt>Ao5</dt><dd id="ao5">-</dd></div><div><dt>Ao12</dt><dd id="ao12">-</dd></div><div><dt>Ao50</dt><dd id="ao50">-</dd></div><div><dt>Ao100</dt><dd id="ao100">-</dd></div><div><dt>Solves</dt><dd id="solveCount">0</dd></div></dl>
+        </section>
+        <section class="panel panel-wide" aria-labelledby="graphTitle"><div class="panel-heading"><div><p class="eyebrow">Graph</p><h2 id="graphTitle">기록 추이</h2></div></div><canvas id="trendCanvas" width="720" height="240"></canvas></section>
+        <section class="panel" aria-labelledby="distributionTitle"><div class="panel-heading"><div><p class="eyebrow">Distribution</p><h2 id="distributionTitle">기록 분포</h2></div></div><div id="distributionBars" class="distribution-bars"></div></section>
+        <section class="panel panel-wide" aria-labelledby="historyTitle"><div class="panel-heading"><div><p class="eyebrow">History</p><h2 id="historyTitle">기록 목록</h2></div><button id="clearSessionButton" type="button" class="danger-button">세션 비우기</button></div><ol id="historyList" class="history-list"></ol></section>
+      </main>
+    </div>
+    <script>
+      const WCA_EVENTS = [['333','3x3'],['222','2x2'],['444','4x4'],['555','5x5'],['666','6x6'],['777','7x7'],['333oh','3x3 OH'],['333bf','3x3 BLD'],['333fm','3x3 FMC'],['minx','Megaminx'],['pyram','Pyraminx'],['skewb','Skewb'],['sq1','Square-1'],['clock','Clock']];
+      const STORAGE_KEY = 'cube-timer-single-file-state-v1';
+      const MOVES = ['R','L','U','D','F','B'];
+      const SUFFIXES = ['',"'",'2'];
+      const $ = (selector) => document.querySelector(selector);
+      const elements = { eventSelect:$('#eventSelect'), sessionSelect:$('#sessionSelect'), newSessionButton:$('#newSessionButton'), timerButton:$('#timerButton'), timerDisplay:$('#timerDisplay'), timerState:$('#timerState'), scrambleText:$('#scrambleText'), scrambleButton:$('#scrambleButton'), clearSessionButton:$('#clearSessionButton'), pbSingle:$('#pbSingle'), ao5:$('#ao5'), ao12:$('#ao12'), ao50:$('#ao50'), ao100:$('#ao100'), solveCount:$('#solveCount'), historyList:$('#historyList'), trendCanvas:$('#trendCanvas'), distributionBars:$('#distributionBars') };
+      const createId = (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+      const formatTime = (ms) => { if (ms == null || Number.isNaN(ms)) return '-'; const total = ms / 1000; const minutes = Math.floor(total / 60); const seconds = total % 60; return minutes > 0 ? `${minutes}:${seconds.toFixed(2).padStart(5,'0')}` : seconds.toFixed(2); };
+      function createSession(name, eventId) { return { id:createId('session'), name, eventId, createdAt:Date.now(), solves:[] }; }
+      function loadState() { try { const saved = localStorage.getItem(STORAGE_KEY); return saved ? JSON.parse(saved) : null; } catch { return null; } }
+      function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+      function axisOf(move) { if (move === 'R' || move === 'L') return 'x'; if (move === 'U' || move === 'D') return 'y'; return 'z'; }
+      function generateScramble(eventId) { const length = eventId === '222' ? 11 : eventId === '444' ? 40 : 25; const scramble = []; let previousAxis = ''; while (scramble.length < length) { const move = MOVES[Math.floor(Math.random() * MOVES.length)]; const axis = axisOf(move); if (axis === previousAxis) continue; previousAxis = axis; scramble.push(`${move}${SUFFIXES[Math.floor(Math.random() * SUFFIXES.length)]}`); } return scramble.join(' '); }
+      function averageOf(solves, windowSize) { const recent = solves.slice(-windowSize); if (recent.length < windowSize) return null; const sorted = recent.map((solve) => solve.timeMs).sort((a,b) => a-b); const trimmed = sorted.slice(1,-1); return Math.round(trimmed.reduce((sum,time) => sum + time, 0) / trimmed.length); }
+      function bestAverage(solves, windowSize) { let best = null; for (let index = windowSize; index <= solves.length; index += 1) { const average = averageOf(solves.slice(0,index), windowSize); if (average != null && (best == null || average < best)) best = average; } return best; }
+      function calculateEventPb(eventId) { const solves = Object.values(state.sessions).flatMap((session) => session.solves).filter((solve) => solve.eventId === eventId); return { singleMs: solves.length ? Math.min(...solves.map((solve) => solve.timeMs)) : null, ao5Ms: bestAverage(solves,5), ao12Ms: bestAverage(solves,12), ao50Ms: bestAverage(solves,50), ao100Ms: bestAverage(solves,100) }; }
+      const defaultSession = createSession('Main Session','333');
+      let state = loadState() || { activeEventId:'333', activeSessionId:defaultSession.id, sessions:{ [defaultSession.id]:defaultSession }, currentScramble:'' };
+      let running = false; let startAt = 0; let raf = 0;
+      function elapsed() { return running ? performance.now() - startAt : 0; }
+      function tick() { elements.timerDisplay.textContent = formatTime(elapsed()); if (running) raf = requestAnimationFrame(tick); }
+      function activeSession() { return state.sessions[state.activeSessionId]; }
+      function startTimer() { if (running) return; running = true; startAt = performance.now(); elements.timerState.textContent = '측정 중'; elements.timerButton.classList.add('running'); tick(); }
+      function stopTimer() { if (!running) return; const timeMs = Math.round(elapsed()); running = false; cancelAnimationFrame(raf); elements.timerButton.classList.remove('running'); elements.timerState.textContent = '저장됨'; activeSession().solves.unshift({ id:createId('solve'), eventId:state.activeEventId, sessionId:state.activeSessionId, timeMs, penalty:null, scramble:state.currentScramble, createdAt:Date.now() }); state.currentScramble = generateScramble(state.activeEventId); persistAndRender(); }
+      function toggleTimer() { running ? stopTimer() : startTimer(); }
+      function resetTimer() { running = false; cancelAnimationFrame(raf); elements.timerButton.classList.remove('running'); elements.timerState.textContent = '대기'; elements.timerDisplay.textContent = '0.00'; }
+      function renderEventOptions() { elements.eventSelect.innerHTML = WCA_EVENTS.map(([id,label]) => `<option value="${id}">${label}</option>`).join(''); }
+      function renderSessionOptions() { elements.sessionSelect.innerHTML = Object.values(state.sessions).map((session) => `<option value="${session.id}">${session.name}</option>`).join(''); }
+      function drawTrend(solves) { const canvas = elements.trendCanvas; const context = canvas.getContext('2d'); const width = canvas.width; const height = canvas.height; context.clearRect(0,0,width,height); context.fillStyle = 'rgba(255,255,255,.04)'; context.fillRect(0,0,width,height); const points = solves.slice(0,40).reverse(); if (points.length < 2) { context.fillStyle = '#96a2c7'; context.font = '18px system-ui'; context.fillText('기록을 2개 이상 저장하면 그래프가 표시됩니다.',28,120); return; } const values = points.map((solve) => solve.timeMs); const min = Math.min(...values); const max = Math.max(...values); context.strokeStyle = '#25d0ab'; context.lineWidth = 4; context.beginPath(); points.forEach((solve,index) => { const x = (index / (points.length - 1)) * (width - 56) + 28; const y = height - 28 - ((solve.timeMs - min) / Math.max(max - min, 1)) * (height - 56); if (index === 0) context.moveTo(x,y); else context.lineTo(x,y); }); context.stroke(); }
+      function renderDistribution(solves) { elements.distributionBars.innerHTML = ''; if (!solves.length) { elements.distributionBars.innerHTML = '<p class="empty-state">기록을 저장하면 분포가 표시됩니다.</p>'; return; } const bucketSize = 5000; const buckets = new Map(); solves.forEach((solve) => { const start = Math.floor(solve.timeMs / bucketSize) * bucketSize; buckets.set(start, (buckets.get(start) || 0) + 1); }); const max = Math.max(...buckets.values()); [...buckets.entries()].sort((a,b) => a[0]-b[0]).forEach(([start,count]) => { const row = document.createElement('div'); row.className = 'bar-row'; row.innerHTML = `<span>${formatTime(start)}~${formatTime(start + bucketSize)}</span><span class="bar-track"><span class="bar-fill" style="width:${(count / max) * 100}%"></span></span><strong>${count}</strong>`; elements.distributionBars.append(row); }); }
+      function renderHistory(solves) { elements.historyList.innerHTML = ''; if (!solves.length) { elements.historyList.innerHTML = '<li class="empty-state">아직 기록이 없습니다.</li>'; return; } solves.forEach((solve,index) => { const item = document.createElement('li'); item.innerHTML = `<span>#${solves.length - index}</span><span class="history-time">${formatTime(solve.timeMs)}</span><span class="history-scramble" title="${solve.scramble}">${solve.scramble}</span>`; elements.historyList.append(item); }); }
+      function render() { const session = activeSession(); const solves = session.solves.filter((solve) => solve.eventId === state.activeEventId); const pb = calculateEventPb(state.activeEventId); elements.eventSelect.value = state.activeEventId; elements.sessionSelect.value = state.activeSessionId; elements.scrambleText.textContent = state.currentScramble; elements.pbSingle.textContent = formatTime(pb.singleMs); elements.ao5.textContent = formatTime(averageOf(solves,5)); elements.ao12.textContent = formatTime(averageOf(solves,12)); elements.ao50.textContent = formatTime(averageOf(solves,50)); elements.ao100.textContent = formatTime(averageOf(solves,100)); elements.solveCount.textContent = solves.length; renderHistory(solves); drawTrend(solves); renderDistribution(solves); }
+      function persistAndRender() { renderSessionOptions(); saveState(); render(); }
+      function bindEvents() { elements.eventSelect.addEventListener('change', (event) => { state.activeEventId = event.target.value; activeSession().eventId = state.activeEventId; state.currentScramble = generateScramble(state.activeEventId); persistAndRender(); }); elements.sessionSelect.addEventListener('change', (event) => { state.activeSessionId = event.target.value; state.activeEventId = activeSession().eventId; persistAndRender(); }); elements.newSessionButton.addEventListener('click', () => { const name = prompt('새 세션 이름을 입력하세요.', `Session ${Object.keys(state.sessions).length + 1}`); if (!name) return; const session = createSession(name, state.activeEventId); state.sessions[session.id] = session; state.activeSessionId = session.id; persistAndRender(); }); elements.clearSessionButton.addEventListener('click', () => { if (!confirm('현재 세션의 기록을 모두 삭제할까요?')) return; activeSession().solves = []; persistAndRender(); }); elements.scrambleButton.addEventListener('click', () => { state.currentScramble = generateScramble(state.activeEventId); persistAndRender(); }); elements.timerButton.addEventListener('click', toggleTimer); window.addEventListener('keydown', (event) => { if (event.code === 'Space') { event.preventDefault(); toggleTimer(); } if (event.code === 'Escape') resetTimer(); }); }
+      function initialize() { renderEventOptions(); renderSessionOptions(); bindEvents(); if (!state.currentScramble) state.currentScramble = generateScramble(state.activeEventId); persistAndRender(); }
+      initialize();
+    </script>
+  </body>
+</html>
