@@ -1,3 +1,22 @@
+const WCA_EVENTS = [
+  ['333','3x3'],
+  ['222','2x2'],
+  ['444','4x4'],
+  ['555','5x5'],
+  ['666','6x6'],
+  ['777','7x7'],
+  ['333oh','3x3 OH'],
+  ['333bf','3x3 BLD'],
+  ['minx','Megaminx'],
+  ['pyram','Pyraminx'],
+  ['skewb','Skewb'],
+  ['sq1','Square-1'],
+  ['clock','Clock']
+];
+
+const STORAGE_KEY = 'cube-timer-timer-first-state-v2';
+const READY_DELAY_MS = 700;
+
 const $ = (selector) => document.querySelector(selector);
 
 const elements = {
@@ -23,10 +42,209 @@ const elements = {
   distributionBars: $('#distributionBars')
 };
 
+const createId = (prefix) =>
+  `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+
+const createSession = (name, eventId) => ({
+  id: createId('session'),
+  name,
+  eventId,
+  createdAt: Date.now(),
+  solves: []
+});
+
+const defaultSession = createSession('Main Session', '333');
+
+let state = loadState() || {
+  activeEventId: '333',
+  activeSessionId: defaultSession.id,
+  sessions: {
+    [defaultSession.id]: defaultSession
+  },
+  currentScramble: ''
+};
+
 let mode = 'idle';
 let startAt = 0;
 let raf = 0;
 let readyTimer = 0;
+
+function loadState() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function activeSession() {
+  return state.sessions[state.activeSessionId];
+}
+
+function sessionSolves() {
+  return activeSession().solves.filter((solve) => solve.eventId === state.activeEventId);
+}
+
+function solvedTime(solve) {
+  if (solve.penalty === 'DNF') return null;
+  return solve.timeMs + (solve.penalty === '+2' ? 2000 : 0);
+}
+
+function formatTime(ms) {
+  if (ms == null || Number.isNaN(ms)) return '-';
+  const total = ms / 1000;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return minutes > 0
+    ? `${minutes}:${seconds.toFixed(2).padStart(5,'0')}`
+    : seconds.toFixed(2);
+}
+
+function displaySolve(solve) {
+  if (solve.penalty === 'DNF') return 'DNF';
+  const base = formatTime(solvedTime(solve));
+  return solve.penalty === '+2' ? `${base}+` : base;
+}
+
+function averageOf(solves, windowSize) {
+  const window = solves.slice(0, windowSize);
+  if (window.length < windowSize) return null;
+
+  const values = window.map(solvedTime);
+  const dnfCount = values.filter((time) => time == null).length;
+
+  if (dnfCount > 1) return null;
+
+  const finite = values
+    .filter((time) => time != null)
+    .sort((a, b) => a - b);
+
+  if (dnfCount === 1) {
+    finite.shift();
+  } else {
+    finite.shift();
+    finite.pop();
+  }
+
+  return Math.round(
+    finite.reduce((sum, time) => sum + time, 0) / finite.length
+  );
+}
+
+function bestAverage(solves, windowSize) {
+  let best = null;
+
+  for (let start = 0; start + windowSize <= solves.length; start += 1) {
+    const average = averageOf(solves.slice(start), windowSize);
+
+    if (average != null && (best == null || average < best)) {
+      best = average;
+    }
+  }
+
+  return best;
+}
+
+function eventSolves(eventId) {
+  return Object.values(state.sessions)
+    .flatMap((session) => session.solves)
+    .filter((solve) => solve.eventId === eventId);
+}
+
+function calculateEventPb(eventId) {
+  const solves = eventSolves(eventId);
+  const singles = solves
+    .map(solvedTime)
+    .filter((time) => time != null);
+
+  return {
+    singleMs: singles.length ? Math.min(...singles) : null,
+    ao5Ms: bestAverage(solves, 5),
+    ao12Ms: bestAverage(solves, 12),
+    ao50Ms: bestAverage(solves, 50),
+    ao100Ms: bestAverage(solves, 100)
+  };
+}
+
+function randomChoice(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function generateSequence(moves, length, avoidSameAxis = true) {
+  const scramble = [];
+  let lastAxis = '';
+
+  while (scramble.length < length) {
+    const move = randomChoice(moves);
+    const axis = move.replace(/[w2'()\/\s-]/g, '')[0];
+
+    if (avoidSameAxis && axis === lastAxis) continue;
+
+    lastAxis = axis;
+    scramble.push(`${move}${randomChoice(['', "'", '2'])}`);
+  }
+
+  return scramble.join(' ');
+}
+
+function generateScramble(eventId) {
+  if (eventId === '222') {
+    return generateSequence(['R', 'U', 'F'], 11);
+  }
+
+  if (eventId === '444') {
+    return generateSequence(['R', 'L', 'U', 'D', 'F', 'B', 'Rw', 'Uw', 'Fw'], 40);
+  }
+
+  if (eventId === '555' || eventId === '666' || eventId === '777') {
+    return generateSequence(
+      ['R', 'L', 'U', 'D', 'F', 'B', 'Rw', 'Lw', 'Uw', 'Dw', 'Fw', 'Bw'],
+      eventId === '555' ? 60 : 80
+    );
+  }
+
+  if (eventId === '333oh' || eventId === '333bf') {
+    return generateSequence(['R', 'L', 'U', 'D', 'F', 'B'], 25);
+  }
+
+  if (eventId === 'pyram') {
+    return generateSequence(['R', 'L', 'U', 'B', 'r', 'l', 'u', 'b'], 12, false);
+  }
+
+  if (eventId === 'skewb') {
+    return generateSequence(['R', 'L', 'U', 'B'], 11, false);
+  }
+
+  if (eventId === 'minx') {
+    return Array.from(
+      { length: 7 },
+      () => `${randomChoice(['R++','R--'])} ${randomChoice(['D++','D--'])}`
+    ).join(' ') + ` ${randomChoice(['U', "U'"])}`;
+  }
+
+  if (eventId === 'sq1') {
+    return Array.from(
+      { length: 12 },
+      () => `(${Math.floor(Math.random() * 7) - 3},${Math.floor(Math.random() * 7) - 3}) /`
+    ).join(' ');
+  }
+
+  if (eventId === 'clock') {
+    return Array.from(
+      { length: 14 },
+      () =>
+        randomChoice(['UR','DR','DL','UL','U','R','D','L','ALL']) +
+        randomChoice(['0+','1+','2+','3+','4+','5+','1-','2-','3-','4-','5-'])
+    ).join(' ');
+  }
+
+  return generateSequence(['R', 'L', 'U', 'D', 'F', 'B'], 25);
+}
 
 function setMode(nextMode) {
   mode = nextMode;
